@@ -19,6 +19,55 @@ def calcular_nivel_por_pontos(pontos):
     else:
         return NivelEnum.BRONZE
 
+def cpf_mask(cpf: str) -> str:
+    """Formata CPF como 000.000.000-00 (se tiver 11 dígitos)"""
+    d = re.sub(r'\D', '', cpf or '')[:11]
+    return f'{d[0:3]}.{d[3:6]}.{d[6:9]}-{d[9:11]}' if len(d) == 11 else (cpf or '')
+
+# ---------------- NOVO ENDPOINT: busca/autocomplete ---------------- #
+@cliente_bp.route('/clientes/search', methods=['GET'])
+def search_clientes():
+    """
+    Busca clientes por nome (ILIKE) ou por dígitos do CPF (parcial).
+    Uso: GET /api/clientes/search?q=<texto ou cpf>
+    Retorna [{ id, nome, cpf, label }]
+    """
+    try:
+        q = (request.args.get('q') or '').strip()
+        if not q:
+            return jsonify([])
+
+        digits = re.sub(r'\D', '', q)
+        query = db.session.query(Cliente)
+
+        conds = []
+        # Busca por CPF "sem máscara" quando houver dígitos
+        if digits:
+            cpf_digits = db.func.replace(db.func.replace(Cliente.cpf, '.', ''), '-', '')
+            conds.append(cpf_digits.like(f'%{digits}%'))
+
+        # Sempre considera nome também
+        conds.append(Cliente.nome.ilike(f'%{q}%'))
+
+        results = (
+            query.filter(db.or_(*conds))
+                 .order_by(Cliente.nome.asc())
+                 .limit(20)
+                 .all()
+        )
+
+        return jsonify([
+            {
+                'id': c.id,
+                'nome': c.nome,
+                'cpf': c.cpf,
+                'label': f'{c.nome} - {cpf_mask(c.cpf)}'
+            } for c in results
+        ])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+# ------------------------------------------------------------------- #
+
 @cliente_bp.route('/clientes', methods=['GET'])
 def listar_clientes():
     """Lista todos os clientes com filtros opcionais"""
@@ -186,4 +235,3 @@ def buscar_por_cpf(cpf):
         return jsonify(cliente.to_dict())
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-

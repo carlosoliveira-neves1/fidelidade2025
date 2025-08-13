@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Entrar • Sistema de Fidelidade</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:#f3f4f6;margin:0}
+    .wrap{min-height:100vh;display:grid;place-items:center}
+    .card{width:100%;max-width:440px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;padding:24px 24px 8px;box-shadow:0 10px 25px rgba(0,0,0,.08)}
+    h1{margin:0 0 12px 0}
+    .row{display:flex;gap:10px;margin:10px 0}
+    input,button{width:100%;padding:12px;border-radius:10px;border:1px solid #d1d5db}
+    button{background:#3b82f6;color:#fff;border:none;cursor:pointer}
+    .muted{color:#6b7280;font-size:13px}
+    .link{color:#2563eb;cursor:pointer}
+    .hidden{display:none}
+    .ok{color:#16a34a}.err{color:#dc2626}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Entrar</h1>
+      <div id="msg" class="muted"></div>
+      <div id="login-pane">
+        <div class="row"><input id="user" placeholder="Usuário"></div>
+        <div class="row"><input id="pass" type="password" placeholder="Senha"></div>
+        <div class="row"><button onclick="doLogin()">Acessar</button></div>
+        <div class="row"><span class="link" onclick="toggleForgot(true)">Esqueci minha senha</span></div>
+      </div>
+
+      <div id="forgot-pane" class="hidden">
+        <div class="muted" style="margin-bottom:8px">Informe seu usuário para gerar um código de redefinição (válido por 15 minutos).</div>
+        <div class="row"><input id="f_user" placeholder="Usuário"></div>
+        <div class="row"><button onclick="doForgot()">Gerar código</button></div>
+
+        <div id="reset-form" class="hidden" style="margin-top:8px">
+          <div class="muted">Código gerado: <b id="tok"></b></div>
+          <div class="row"><input id="f_token" placeholder="Código"></div>
+          <div class="row"><input id="f_new" type="password" placeholder="Nova senha"></div>
+          <div class="row"><button onclick="doReset()">Redefinir senha</button></div>
+        </div>
+
+        <div class="row"><span class="link" onclick="toggleForgot(false)">Voltar ao login</span></div>
+      </div>
+
+      <div class="muted" style="text-align:center;margin:12px 0 8px">Sistema de Fidelidade</div>
+    </div>
+  </div>
+
+  <script>
+    const $ = id => document.getElementById(id);
+    function showMsg(txt, ok=false){ const m=$('msg'); m.textContent=txt||''; m.className= ok?'ok':'err'; }
+
+    async function doLogin(){
+      showMsg('');
+      const body = { username: $('user').value, password: $('pass').value };
+      const r = await fetch('/api/auth/login',{method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body), credentials:'include'});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok){ showMsg(j.error||'Falha no login'); return; }
+      location.href = '/';
+    }
+
+    function toggleForgot(on){
+      $('login-pane').classList.toggle('hidden', !!on);
+      $('forgot-pane').classList.toggle('hidden', !on);
+      $('msg').textContent='';
+    }
+
+    async function doForgot(){
+      showMsg('');
+      const r = await fetch('/api/auth/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:$('f_user').value})});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok){ showMsg(j.error||'Erro ao gerar código'); return; }
+      // sem email, mostramos o token para testes
+      $('tok').textContent = j.token || '(verifique com o administrador)';
+      $('reset-form').classList.remove('hidden');
+      showMsg('Código gerado. Validade ~15min.', true);
+    }
+
+    async function doReset(){
+      showMsg('');
+      const body = { username:$('f_user').value, token:$('f_token').value, new_password:$('f_new').value };
+      const r = await fetch('/api/auth/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j = await r.json().catch(()=>({}));
+      if(!r.ok){ showMsg(j.error||'Não foi possível redefinir'); return; }
+      showMsg('Senha redefinida. Faça login.', true);
+      setTimeout(()=>toggleForgot(false), 800);
+    }
+  </script>
+</body>
+</html>

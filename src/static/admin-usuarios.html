@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Admin • Usuários</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    :root { --bg:#0f172a; --card:#0b1220; --text:#e5e7eb; --muted:#9ca3af; --ok:#86efac; --err:#fca5a5; --line:#1f2937; --pill:#1f2937; --btn:#2563eb; --btnHover:#1d4ed8; }
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);margin:0;padding:24px}
+    h1{margin:0 0 16px}
+    .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    input,select,button{padding:10px 12px;border-radius:10px;border:1px solid #374151;background:var(--card);color:var(--text)}
+    button{background:var(--btn);border:none;cursor:pointer}
+    button:hover{background:var(--btnHover)}
+    table{width:100%;border-collapse:collapse;margin-top:14px}
+    th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;font-size:14px;vertical-align:top}
+    .ok{color:var(--ok)}.err{color:var(--err)}
+    .pill{padding:4px 8px;border-radius:999px;background:var(--pill)}
+    details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+    summary{cursor:pointer;margin:-10px;padding:10px}
+    .perm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:8px}
+    .perm-col h4{margin:0 0 6px;font-size:13px;color:var(--muted)}
+    .checklist{display:flex;flex-wrap:wrap;gap:8px}
+    .checklist label{display:inline-flex;align-items:center;gap:6px;background:#111827;border:1px solid #1f2937;border-radius:8px;padding:6px 8px;font-size:13px}
+    .mright{margin-right:6px}
+    .muted{color:var(--muted)}
+    .inline{display:inline-flex;gap:8px;align-items:center}
+    .modal-back{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;z-index:9999}
+    .modal{background:var(--card);border:1px solid var(--line);border-radius:14px;max-width:720px;width:96%;padding:16px}
+    .modal h3{margin-top:0}
+    .modal .actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+  </style>
+</head>
+<body>
+  <h1>Admin • Usuários</h1>
+
+  <div class="row">
+    <input id="q" placeholder="buscar por nome/username/email" />
+    <button onclick="load()">Buscar</button>
+    <button onclick="logout()">Sair</button>
+    <span id="msg"></span>
+  </div>
+
+  <details open>
+    <summary>🆕 Novo usuário</summary>
+    <div class="row" style="margin-top:8px">
+      <input id="nome" placeholder="Nome completo">
+      <input id="username" placeholder="Username">
+      <input id="email" placeholder="Email (opcional)">
+      <select id="role">
+        <option>ATENDENTE</option>
+        <option>GERENTE</option>
+        <option>ADMIN</option>
+      </select>
+      <input id="senha" type="password" placeholder="Senha">
+      <button onclick="createUser()">Criar usuário</button>
+    </div>
+
+    <div class="muted mright">Permissões por Loja</div>
+    <div class="perm-grid">
+      <div class="perm-col">
+        <h4>Ver</h4>
+        <div id="permVer" class="checklist"></div>
+      </div>
+      <div class="perm-col">
+        <h4>Criar</h4>
+        <div id="permCriar" class="checklist"></div>
+      </div>
+      <div class="perm-col">
+        <h4>Editar</h4>
+        <div id="permEditar" class="checklist"></div>
+      </div>
+    </div>
+    <div class="muted" style="margin-top:6px">Selecione as lojas permitidas para cada ação.</div>
+  </details>
+
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Nome</th><th>Username</th><th>Email</th><th>Role</th><th>Ativo</th><th>Permissões</th><th>Ações</th></tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
+
+  <!-- Modal de edição de permissões -->
+  <div class="modal-back" id="permModalBack">
+    <div class="modal">
+      <h3>Permissões por Loja</h3>
+      <div class="perm-grid">
+        <div class="perm-col">
+          <h4>Ver</h4>
+          <div id="mPermVer" class="checklist"></div>
+        </div>
+        <div class="perm-col">
+          <h4>Criar</h4>
+          <div id="mPermCriar" class="checklist"></div>
+        </div>
+        <div class="perm-col">
+          <h4>Editar</h4>
+          <div id="mPermEditar" class="checklist"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button onclick="closePermModal()">Cancelar</button>
+        <button onclick="savePermModal()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (id)=>document.getElementById(id);
+
+    // ---------------- LOJAS ----------------
+    let LOJAS = [];
+    function lojaLabel(k){ return k.replaceAll('_',' ').toLowerCase().replace(/\b\w/g,m=>m.toUpperCase()); }
+
+    async function carregarLojas(){
+      try{
+        const r = await fetch('/api/admin/lojas');
+        if(r.ok){
+          const j = await r.json();
+          LOJAS = j.lojas || [];
+        }
+      }catch(e){}
+      if(!LOJAS.length){
+        // fallback caso a rota não exista
+        LOJAS = ['JABAQUARA','INDIANOPOLIS','MASCOTE','TATUAPE','PRAIA_GRANDE','OSASCO'];
+      }
+      renderLojaBoxes('permVer');
+      renderLojaBoxes('permCriar');
+      renderLojaBoxes('permEditar');
+    }
+
+    function renderLojaBoxes(containerId, prechecked = []){
+      const el = $(containerId);
+      el.innerHTML = LOJAS.map(l => {
+        const checked = prechecked.includes(l) ? 'checked' : '';
+        return `<label><input type="checkbox" value="${l}" ${checked}> ${lojaLabel(l)}</label>`;
+      }).join('');
+    }
+
+    function getChecked(containerId){
+      return Array.from(document.querySelectorAll(`#${containerId} input[type=checkbox]:checked`)).map(i=>i.value);
+    }
+
+    // --------------- AUTH ---------------
+    async function logout(){
+      await fetch('/api/auth/logout',{method:'POST'});
+      location.href = '/login';
+    }
+
+    // --------------- LISTAGEM ---------------
+    async function load(page=1){
+      const r = await fetch('/api/admin/users?q='+encodeURIComponent($('q').value)+'&page='+page);
+      if(!r.ok){ $('msg').textContent='Erro ao listar'; $('msg').className='err'; return; }
+      const j = await r.json();
+
+      const rows = j.users.map(u => `
+        <tr>
+          <td>${u.id}</td>
+          <td>${u.nome}</td>
+          <td>${u.username}</td>
+          <td>${u.email||''}</td>
+          <td><span class="pill">${u.role}</span></td>
+          <td>${u.ativo? '✅':'❌'}</td>
+          <td class="muted">
+            ver: ${u.permissoes?.view?.join(', ')||'-'}<br>
+            criar: ${u.permissoes?.create?.join(', ')||'-'}<br>
+            editar: ${u.permissoes?.edit?.join(', ')||'-'}
+          </td>
+          <td>
+            <div class="inline">
+              <button onclick='toggleAtivo(${u.id}, ${u.ativo? "false":"true"})'>${u.ativo? 'Desativar':'Ativar'}</button>
+              <button onclick='openPermModal(${u.id})'>Permissões</button>
+              <button onclick='promove(${u.id})'>Promover</button>
+              <button onclick='del(${u.id})'>Excluir</button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+
+      $('tbody').innerHTML = rows || '<tr><td colspan="8">Nenhum usuário</td></tr>';
+      $('msg').textContent = `Total: ${j.total}`; $('msg').className='ok';
+    }
+
+    // --------------- CRIAÇÃO ---------------
+    async function createUser(){
+      const body = {
+        nome: $('nome').value,
+        username: $('username').value,
+        email: $('email').value || null,
+        role: $('role').value,
+        senha: $('senha').value,
+        permissoes: {
+          view:  getChecked('permVer'),
+          create:getChecked('permCriar'),
+          edit:  getChecked('permEditar'),
+        }
+      };
+      const r = await fetch('/api/admin/users',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(body)
+      });
+      const j = await r.json();
+      if(!r.ok){ alert(j.error||'Erro ao criar'); return; }
+      alert('Usuário criado!');
+      ['nome','username','email','senha'].forEach(id=>$(id).value='');
+      // desmarca
+      ['permVer','permCriar','permEditar'].forEach(id=>document.querySelectorAll(`#${id} input:checked`).forEach(i=>i.checked=false));
+      load();
+    }
+
+    // --------------- ATIVO / ROLE / DELETE ---------------
+    async function toggleAtivo(id, valor){
+      const r = await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ativo: valor})});
+      if(!r.ok){ alert('Erro'); return; }
+      load();
+    }
+
+    async function promove(id){
+      const role = prompt('Nova role (ATENDENTE | GERENTE | ADMIN):','GERENTE');
+      if(!role) return;
+      const r = await fetch('/api/admin/users/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({role})});
+      if(!r.ok){ alert('Erro'); return; }
+      load();
+    }
+
+    async function del(id){
+      if(!confirm('Excluir usuário '+id+'?')) return;
+      const r = await fetch('/api/admin/users/'+id,{method:'DELETE'});
+      if(!r.ok){ alert('Erro'); return; }
+      load();
+    }
+
+    // --------------- MODAL DE PERMISSÕES ---------------
+    let permUserId = null;
+    function openPermModal(uid){
+      permUserId = uid;
+      // carrega usuário pra pré-marcar
+      fetch('/api/admin/users?q='+uid+'&page=1&per_page=1').then(r=>r.json()).then(j=>{
+        const u = (j.users||[]).find(x=>x.id===uid);
+        const pv = u?.permissoes?.view || [];
+        const pc = u?.permissoes?.create || [];
+        const pe = u?.permissoes?.edit || [];
+        renderLojaBoxes('mPermVer', pv);
+        renderLojaBoxes('mPermCriar', pc);
+        renderLojaBoxes('mPermEditar', pe);
+        $('permModalBack').style.display='flex';
+      });
+    }
+    function closePermModal(){
+      $('permModalBack').style.display='none';
+      permUserId = null;
+    }
+    async function savePermModal(){
+      if(!permUserId) return;
+      const permissoes = {
+        view:  getChecked('mPermVer'),
+        create:getChecked('mPermCriar'),
+        edit:  getChecked('mPermEditar'),
+      };
+      const r = await fetch('/api/admin/users/'+permUserId,{
+        method:'PUT',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({permissoes})
+      });
+      if(!r.ok){ const j=await r.json().catch(()=>({})); alert(j.error||'Erro ao salvar'); return; }
+      closePermModal();
+      load();
+    }
+
+    // init
+    (async function init(){
+      await carregarLojas();
+      load();
+    })();
+  </script>
+</body>
+</html>
